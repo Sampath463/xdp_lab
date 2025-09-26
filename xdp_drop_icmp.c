@@ -11,28 +11,28 @@
 SEC("xdp")
 int xdp_drop_icmp(struct xdp_md *ctx)
 {
-    // XDP gives you raw packet pointers via ctx
+    // Raw packet pointers from XDP context
     void *data     = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
 
-    // Parse L2 (Ethernet) header safely
+    // Parse Ethernet header safely
     struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end) {
-        // Truncated Ethernet header: let kernel handle it
+    if ((void *)(eth + 1) > data_end)
         return XDP_PASS;
-    }
 
-    // Only handle IPv4 frames (EtherType 0x0800)
+    // Only handle IPv4 packets
     if (eth->h_proto == __bpf_htons(ETH_P_IP)) {
         struct iphdr *ip = (void *)(eth + 1);
 
-        // Bounds check IPv4 header
-        if ((void *)(ip + 1) > data_end) {
-            // Malformed IPv4 packet: safest is to PASS
+        // Check for truncated IPv4 header
+        if ((void *)(ip + 1) > data_end)
             return XDP_PASS;
-        }
 
-        // If the L4 protocol is ICMP (1), drop it
+        // Optional: bounds check for IP header length (handling IP options)
+        if ((void *)ip + ip->ihl * 4 > data_end)
+            return XDP_PASS;
+
+        // Drop ICMP packets (protocol number 1)
         if (ip->protocol == IPPROTO_ICMP) {
             bpf_printk("XDP_DROP_ICMP: Dropped ICMPv4 from %pI4\n", &ip->saddr);
             return XDP_DROP;
@@ -42,4 +42,6 @@ int xdp_drop_icmp(struct xdp_md *ctx)
     // Not IPv4-ICMP: allow
     return XDP_PASS;
 }
-char_license[] SEC("license") = "GPL";
+
+// License for eBPF verifier
+const char LICENSE[] SEC("license") = "GPL";
